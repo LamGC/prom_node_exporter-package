@@ -1,0 +1,3 @@
+[submodule "node_exporter-rpm"]
+	path = node_exporter-rpm
+	url = https://github.com/meowtochondria/node_exporter-rpm
