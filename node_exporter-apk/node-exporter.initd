@@ -1,0 +1,25 @@
+#!/sbin/openrc-run
+
+name=node-exporter
+description="Prometheus exporter for machine metrics"
+
+supervisor=supervise-daemon
+command=/usr/bin/node_exporter
+command_args="$ARGS"
+command_user=prometheus:prometheus
+
+logdir="/var/log/${RC_SVCNAME}"
+logfile="${logdir}/${RC_SVCNAME}.log"
+pidfile="/run/${RC_SVCNAME}.pid"
+
+start_stop_daemon_args="--stderr $logfile"
+
+depend() {
+    need net
+    after firewall
+}
+
+start_pre() {
+    checkpath -d -o prometheus:prometheus -m 755 "$logdir"
+    checkpath -f -o prometheus:prometheus -m 644 "$logfile"
+}

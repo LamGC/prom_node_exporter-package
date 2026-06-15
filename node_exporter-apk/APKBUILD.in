@@ -1,0 +1,30 @@
+# Contributor: prom_node_exporter package maintainer
+maintainer="prom_node_exporter package maintainer <package@example.com>"
+pkgname=prometheus-node-exporter
+_pkgname=node_exporter
+pkgver=__VERSION__
+pkgrel=__RELEASE__
+pkgdesc="Prometheus exporter for machine metrics"
+url="https://github.com/prometheus/node_exporter"
+arch="__ARCH__"
+license="Apache-2.0"
+options="!check !strip !tracedeps !archcheck"
+install="$pkgname.pre-install $pkgname.post-upgrade"
+subpackages="$pkgname-openrc"
+source=""
+
+build() {
+    true
+}
+
+package() {
+    install -Dm755 "$startdir"/node_exporter \
+        "$pkgdir"/usr/bin/node_exporter
+}
+
+openrc() {
+    install -Dm755 "$startdir"/node-exporter.initd \
+        "$subpkgdir"/etc/init.d/node-exporter
+    install -Dm644 "$startdir"/node-exporter.confd \
+        "$subpkgdir"/etc/conf.d/node-exporter
+}

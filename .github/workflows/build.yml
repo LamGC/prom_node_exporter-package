@@ -9,21 +9,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ── Parallel build across all Debian architectures ────────────────────
-  build:
+  # ── Debian (.deb) packages ─────────────────────────────────────────────
+  build-deb:
     runs-on: ubuntu-24.04
     strategy:
-      fail-fast: false   # keep building other arches if one fails
+      fail-fast: false
       matrix:
-        arch:
-          - amd64
-          - arm64
-          - armhf
-          - i386
-          - ppc64el
-          - s390x
-          - riscv64
-          - mips64el
+        arch: [amd64, arm64, armhf, i386, ppc64el, s390x, riscv64, mips64el]
 
     steps:
       - uses: actions/checkout@v4
@@ -36,11 +28,9 @@ jobs:
       - name: Build .deb (${{ matrix.arch }})
         run: |
           ver=$(cat LATEST_VERSION | sed 's/^v//')
-          echo "Building version=$ver arch=${{ matrix.arch }}"
           cd node_exporter-deb
           ./build.sh -v "$ver" -a "${{ matrix.arch }}"
 
-      # Run lintian only on native arch; cross-arch lintian is noisy.
       - name: Lintian check (amd64 only)
         if: matrix.arch == 'amd64'
         run: |
@@ -51,7 +41,7 @@ jobs:
             echo "lintian exited with errors (exit code $rc)" >&2
             exit 1
           fi
-          echo "lintian passed (exit code $rc: clean or warnings only)"
+          echo "lintian passed (exit code $rc)"
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
@@ -61,9 +51,50 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # ── Release draft (after all arch builds succeed) ─────────────────────
+  # ── Alpine (.apk) packages ─────────────────────────────────────────────
+  build-apk:
+    runs-on: ubuntu-24.04
+    container: alpine:3.21
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64, armv7, x86, s390x, ppc64le, riscv64]
+
+    steps:
+      - name: Install build dependencies
+        run: apk add --no-cache bash wget curl alpine-sdk sudo git
+
+      - uses: actions/checkout@v4
+
+      - name: Setup build user
+        run: |
+          adduser -D -G abuild builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+      - name: Build .apk (${{ matrix.arch }})
+        run: |
+          ver=$(cat LATEST_VERSION | sed 's/^v//')
+          sudo -u builder HOME=/home/builder \
+            bash -c "cd node_exporter-apk && ./build.sh -v '$ver' -a '${{ matrix.arch }}'"
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p output
+          find /home/builder/packages -name "prometheus-node-exporter-*.apk" -type f \
+            -exec cp {} output/ \;
+          ls -la output/
+
+      - name: Upload .apk artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ matrix.arch }}
+          path: output/prometheus-node-exporter-*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  # ── Release draft ──────────────────────────────────────────────────────
   release:
-    needs: build
+    needs: [build-deb, build-apk]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -98,15 +129,23 @@ jobs:
         with:
           pattern: deb-*
           merge-multiple: true
-          path: artifacts/
+          path: artifacts/deb/
+
+      - name: Download all .apk artifacts
+        if: steps.check.outputs.EXISTS == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: apk-*
+          merge-multiple: true
+          path: artifacts/apk/
 
       - name: List artifacts
         if: steps.check.outputs.EXISTS == 'false'
         run: |
-          echo "=== Artifacts for release ==="
-          ls -lh artifacts/
-          echo "=== Total ==="
-          ls artifacts/ | wc -l
+          echo "=== DEB packages ==="
+          ls -lh artifacts/deb/ 2>/dev/null || echo "(none)"
+          echo "=== APK packages ==="
+          ls -lh artifacts/apk/ 2>/dev/null || echo "(none)"
 
       - name: Create Release Draft
         if: steps.check.outputs.EXISTS == 'false'
@@ -114,18 +153,20 @@ jobs:
         with:
           token: ${{ github.token }}
           tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.tag }} — Debian packages
+          name: ${{ steps.version.outputs.tag }} — Debian + Alpine packages
           draft: true
           make_latest: true
-          files: artifacts/*.deb
+          files: |
+            artifacts/deb/*.deb
+            artifacts/apk/*.apk
           body: |
-            ## node_exporter ${{ steps.version.outputs.tag }} — Debian packages
+            ## node_exporter ${{ steps.version.outputs.tag }}
 
-            Pre-built `.deb` packages for multiple architectures.
+            Pre-built packages for Debian/Ubuntu (`.deb`) and Alpine Linux (`.apk`).
 
             Upstream release: https://github.com/prometheus/node_exporter/releases/tag/${{ steps.version.outputs.tag }}
 
-            ### Architectures
+            ### Debian/Ubuntu (.deb)
 
             | Architecture | Package |
             |-------------|---------|
@@ -138,12 +179,28 @@ jobs:
             | riscv64 | `prometheus-node-exporter_${{ steps.version.outputs.plain }}-1_riscv64.deb` |
             | mips64el | `prometheus-node-exporter_${{ steps.version.outputs.plain }}-1_mips64el.deb` |
 
-            ### Install
-
             ```bash
             sudo dpkg -i prometheus-node-exporter_*.deb
-            # edit /etc/default/prometheus-node-exporter to set arguments
+            sudo vi /etc/default/prometheus-node-exporter
             sudo systemctl start prometheus-node-exporter
+            ```
+
+            ### Alpine Linux (.apk)
+
+            | Architecture | Package |
+            |-------------|---------|
+            | x86_64 | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-r0.apk` |
+            | aarch64 | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-r0.apk` |
+            | armv7 | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-r0.apk` |
+            | x86 | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-r0.apk` |
+            | s390x | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-r0.apk` |
+            | ppc64le | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-r0.apk` |
+            | riscv64 | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-r0.apk` |
+
+            ```bash
+            sudo apk add --allow-untrusted prometheus-node-exporter-*.apk prometheus-node-exporter-openrc-*.apk
+            sudo vi /etc/conf.d/node-exporter
+            sudo rc-service node-exporter start
             ```
 
             > 🔒 **This is a draft release.** Review the artifacts, then click "Publish release" to make it public.
