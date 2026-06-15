@@ -1,0 +1,19 @@
+[Unit]
+Description=Prometheus exporter for machine metrics
+Documentation=https://github.com/prometheus/node_exporter
+
+[Service]
+Restart=on-failure
+User=prometheus
+Group=prometheus
+EnvironmentFile=-/etc/default/prometheus-node-exporter
+ExecStart=/usr/bin/node_exporter $ARGS
+# node_exporter does not support hot-reload. Use "systemctl restart"
+# to apply configuration changes from /etc/default/prometheus-node-exporter.
+StandardOutput=append:/var/log/prometheus/prometheus-node-exporter.log
+StandardError=append:/var/log/prometheus/prometheus-node-exporter.log
+TimeoutStopSec=20s
+SendSIGKILL=no
+
+[Install]
+WantedBy=multi-user.target

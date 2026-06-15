@@ -1,0 +1,53 @@
+name: Check for new upstream release
+
+on:
+  schedule:
+    # Run daily at 08:37 UTC (off-peak, avoid round-hour thundering herd).
+    - cron: '37 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch latest upstream version
+        id: upstream
+        run: |
+          latest=$(curl -sSf https://api.github.com/repos/prometheus/node_exporter/releases/latest | jq -r .tag_name)
+          if [ -z "$latest" ] || [ "$latest" = "null" ]; then
+            echo "ERROR: GitHub API returned empty or null tag_name" >&2
+            exit 1
+          fi
+          echo "UPSTREAM=$latest" >> "$GITHUB_OUTPUT"
+          echo "Upstream latest: $latest"
+
+      - name: Read current LATEST_VERSION
+        id: current
+        run: |
+          if [ -f LATEST_VERSION ]; then
+            cur=$(cat LATEST_VERSION)
+          else
+            cur="none"
+          fi
+          echo "CURRENT=$cur" >> "$GITHUB_OUTPUT"
+          echo "Current tracked: $cur"
+
+      - name: Update LATEST_VERSION
+        if: steps.upstream.outputs.UPSTREAM != steps.current.outputs.CURRENT && steps.upstream.outputs.UPSTREAM != ''
+        run: |
+          echo "${{ steps.upstream.outputs.UPSTREAM }}" > LATEST_VERSION
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add LATEST_VERSION
+          git commit -m "chore: bump LATEST_VERSION → ${{ steps.upstream.outputs.UPSTREAM }}"
+          git push
+          echo "Updated LATEST_VERSION and pushed — build workflow will trigger now."
+
+      - name: No update needed
+        if: steps.upstream.outputs.UPSTREAM == steps.current.outputs.CURRENT
+        run: echo "LATEST_VERSION is already at ${{ steps.current.outputs.CURRENT }}. Nothing to do."

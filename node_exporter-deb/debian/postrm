@@ -1,0 +1,16 @@
+#!/bin/sh
+# postrm script for prometheus-node-exporter
+
+set -e
+
+case "$1" in
+  purge)
+    rm -rf /var/log/prometheus/prometheus-node-exporter.log \
+           /var/log/prometheus/prometheus-node-exporter.log.*
+    # We do NOT remove the system user.
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0

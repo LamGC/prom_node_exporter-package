@@ -1,0 +1,37 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+# No Go source to build — the binary is downloaded by build.sh before
+# dpkg-buildpackage is invoked.
+override_dh_auto_build:
+	@echo "Skipping build: using pre-downloaded binary"
+
+override_dh_auto_test:
+	@echo "Skipping tests: no source available"
+
+override_dh_auto_install:
+	mkdir -p debian/prometheus-node-exporter/usr/bin
+	install -m 755 node_exporter debian/prometheus-node-exporter/usr/bin/node_exporter
+
+# dh_installsystemd picks up debian/service automatically and installs
+# it as /lib/systemd/system/prometheus-node-exporter.service.
+# dh_installlogrotate picks up debian/logrotate as
+# /etc/logrotate.d/prometheus-node-exporter.
+
+# Skip dwz — Go binaries have incompatible DWARF format.
+override_dh_dwz:
+	@echo "Skipping dwz: Go binary DWARF not compatible"
+
+# Skip strip — Go binaries are already stripped and cross-arch
+# stripping requires arch-specific binutils (e.g. aarch64-linux-gnu-objcopy).
+override_dh_strip:
+	@echo "Skipping strip: Go binary already stripped"
+
+# Skip shlibdeps — Go binaries are statically linked, no shared lib deps.
+override_dh_makeshlibs:
+	@echo "Skipping makeshlibs: static Go binary has no shared libs"
+
+override_dh_shlibdeps:
+	@echo "Skipping shlibdeps: static Go binary has no shared libs"

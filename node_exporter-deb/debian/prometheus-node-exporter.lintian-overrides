@@ -1,0 +1,6 @@
+# Go binaries are statically linked by design — not a bug.
+prometheus-node-exporter: statically-linked-binary [usr/bin/node_exporter]
+
+# Go binaries don't follow the standard DWARF strip pattern.
+# dh_strip warns but still processes.
+prometheus-node-exporter: unstripped-binary-or-object [usr/bin/node_exporter]
