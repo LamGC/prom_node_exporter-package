@@ -1,0 +1,8 @@
+#!/bin/sh
+# Create prometheus system user/group on first install.
+
+addgroup -S prometheus 2>/dev/null || true
+adduser -S -D -h /var/lib/prometheus -s /sbin/nologin \
+    -G prometheus -g "Prometheus daemon" prometheus 2>/dev/null || true
+
+exit 0

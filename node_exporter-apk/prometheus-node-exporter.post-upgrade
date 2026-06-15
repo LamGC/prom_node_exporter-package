@@ -1,0 +1,10 @@
+#!/bin/sh
+# post-upgrade — ensure user exists after upgrade, restart service.
+# The pre-install script handles user creation on fresh installs;
+# this script ensures the user hasn't been removed between upgrades.
+
+addgroup -S prometheus 2>/dev/null || true
+adduser -S -D -h /var/lib/prometheus -s /sbin/nologin \
+    -G prometheus -g "Prometheus daemon" prometheus 2>/dev/null || true
+
+exit 0

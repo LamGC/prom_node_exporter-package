@@ -1,0 +1,9 @@
+# /etc/conf.d/node-exporter
+#
+# Custom arguments can be specified like:
+#
+# ARGS="--web.listen-address=':9100' --log.level=debug"
+#
+# Run "node_exporter --help" for the full option list.
+
+ARGS=""

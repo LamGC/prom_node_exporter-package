@@ -1,0 +1,12 @@
+# Build output
+build/
+*.apk
+
+# Downloaded tarballs
+*.tar.gz
+
+# Extracted binary
+node_exporter
+
+# Generated APKBUILD (from template)
+APKBUILD
