@@ -1,0 +1,8 @@
+#!/bin/sh
+# prerm script for prometheus-node-exporter
+
+set -e
+
+#DEBHELPER#
+
+exit 0

@@ -1,0 +1,23 @@
+#!/bin/sh
+# postinst script for prometheus-node-exporter
+
+set -e
+
+case "$1" in
+  configure)
+    adduser --quiet --system --home /var/lib/prometheus --no-create-home \
+            --group --gecos "Prometheus daemon" prometheus
+
+    if ! dpkg-statoverride --list /var/lib/prometheus >/dev/null; then
+      mkdir -p /var/lib/prometheus
+      chown prometheus:prometheus /var/lib/prometheus
+    fi
+
+    mkdir -p /var/log/prometheus
+    chown prometheus:prometheus /var/log/prometheus
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0

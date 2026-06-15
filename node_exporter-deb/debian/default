@@ -1,0 +1,17 @@
+# Default command-line arguments for prometheus-node-exporter.
+# These are passed directly to /usr/bin/node_exporter.
+#
+# Common options:
+#   --web.listen-address=":9100"      (default)
+#   --web.telemetry-path="/metrics"   (default)
+#   --log.level="info"                debug, info, warn, error
+#   --log.format="logfmt"             logfmt, json
+#   --collector.disable-defaults      disable all default collectors
+#   --collector.<name>                enable a specific collector
+#
+# Run "node_exporter --help" for the full option list.
+#
+# Due to shell escaping, to pass backslashes for regexes you need to
+# double them (\\d for \d). Under systemd you need to double again
+# (\\\\d to mean \d), and escape newlines too.
+ARGS=""

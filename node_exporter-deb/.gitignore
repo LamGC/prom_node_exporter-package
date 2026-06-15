@@ -1,0 +1,18 @@
+# Build output
+build/
+*.deb
+*.buildinfo
+*.changes
+
+# Downloaded tarballs
+*.tar.gz
+
+# Extracted binary
+node_exporter
+
+# Debian build artifacts
+debian/files
+debian/prometheus-node-exporter/
+debian/*.debhelper.log
+debian/*.substvars
+debian/.debhelper/

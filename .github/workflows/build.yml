@@ -1,0 +1,153 @@
+name: Build and draft release
+
+on:
+  push:
+    paths:
+      - 'LATEST_VERSION'
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  # ── Parallel build across all Debian architectures ────────────────────
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false   # keep building other arches if one fails
+      matrix:
+        arch:
+          - amd64
+          - arm64
+          - armhf
+          - i386
+          - ppc64el
+          - s390x
+          - riscv64
+          - mips64el
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dpkg-dev fakeroot devscripts debhelper wget curl
+
+      - name: Build .deb (${{ matrix.arch }})
+        run: |
+          ver=$(cat LATEST_VERSION | sed 's/^v//')
+          echo "Building version=$ver arch=${{ matrix.arch }}"
+          cd node_exporter-deb
+          ./build.sh -v "$ver" -a "${{ matrix.arch }}"
+
+      # Run lintian only on native arch; cross-arch lintian is noisy.
+      - name: Lintian check (amd64 only)
+        if: matrix.arch == 'amd64'
+        run: |
+          sudo apt-get install -y -qq lintian
+          lintian node_exporter-deb/prometheus-node-exporter_*.deb
+          rc=$?
+          if [ $rc -ge 2 ]; then
+            echo "lintian exited with errors (exit code $rc)" >&2
+            exit 1
+          fi
+          echo "lintian passed (exit code $rc: clean or warnings only)"
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.arch }}
+          path: node_exporter-deb/prometheus-node-exporter_*.deb
+          if-no-files-found: error
+          retention-days: 30
+
+  # ── Release draft (after all arch builds succeed) ─────────────────────
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          tag=$(cat LATEST_VERSION)
+          plain="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "plain=$plain" >> "$GITHUB_OUTPUT"
+
+      - name: Check if release already exists
+        id: check
+        run: |
+          if gh release view "${{ steps.version.outputs.tag }}" &>/dev/null; then
+            echo "EXISTS=true" >> "$GITHUB_OUTPUT"
+            echo "Release for ${{ steps.version.outputs.tag }} already exists — skipping release draft."
+          else
+            echo "EXISTS=false" >> "$GITHUB_OUTPUT"
+            echo "No existing release for ${{ steps.version.outputs.tag }} — will create draft."
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Download all .deb artifacts
+        if: steps.check.outputs.EXISTS == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: deb-*
+          merge-multiple: true
+          path: artifacts/
+
+      - name: List artifacts
+        if: steps.check.outputs.EXISTS == 'false'
+        run: |
+          echo "=== Artifacts for release ==="
+          ls -lh artifacts/
+          echo "=== Total ==="
+          ls artifacts/ | wc -l
+
+      - name: Create Release Draft
+        if: steps.check.outputs.EXISTS == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ github.token }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }} — Debian packages
+          draft: true
+          make_latest: true
+          files: artifacts/*.deb
+          body: |
+            ## node_exporter ${{ steps.version.outputs.tag }} — Debian packages
+
+            Pre-built `.deb` packages for multiple architectures.
+
+            Upstream release: https://github.com/prometheus/node_exporter/releases/tag/${{ steps.version.outputs.tag }}
+
+            ### Architectures
+
+            | Architecture | Package |
+            |-------------|---------|
+            | amd64 | `prometheus-node-exporter_${{ steps.version.outputs.plain }}-1_amd64.deb` |
+            | arm64 | `prometheus-node-exporter_${{ steps.version.outputs.plain }}-1_arm64.deb` |
+            | armhf | `prometheus-node-exporter_${{ steps.version.outputs.plain }}-1_armhf.deb` |
+            | i386  | `prometheus-node-exporter_${{ steps.version.outputs.plain }}-1_i386.deb` |
+            | ppc64el | `prometheus-node-exporter_${{ steps.version.outputs.plain }}-1_ppc64el.deb` |
+            | s390x | `prometheus-node-exporter_${{ steps.version.outputs.plain }}-1_s390x.deb` |
+            | riscv64 | `prometheus-node-exporter_${{ steps.version.outputs.plain }}-1_riscv64.deb` |
+            | mips64el | `prometheus-node-exporter_${{ steps.version.outputs.plain }}-1_mips64el.deb` |
+
+            ### Install
+
+            ```bash
+            sudo dpkg -i prometheus-node-exporter_*.deb
+            # edit /etc/default/prometheus-node-exporter to set arguments
+            sudo systemctl start prometheus-node-exporter
+            ```
+
+            > 🔒 **This is a draft release.** Review the artifacts, then click "Publish release" to make it public.
+
+      - name: Done (release existed)
+        if: steps.check.outputs.EXISTS == 'true'
+        run: echo "Skipped — release draft already exists for ${{ steps.version.outputs.tag }}."

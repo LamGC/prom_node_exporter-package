@@ -1,0 +1,4 @@
+# debian/install — maps files from the source tree into the binary package.
+# The binary is handled in debian/rules override_dh_auto_install.
+# systemd service is auto-detected from debian/service by dh_installsystemd.
+# logrotate config is auto-detected from debian/logrotate by dh_installlogrotate.

@@ -1,0 +1,6 @@
+prometheus-node-exporter (0.0.0-1) unstable; urgency=medium
+
+  * Template entry — version is set by build.sh at build time.
+
+ -- prom_node_exporter package maintainer <package@example.com>  Tue, 16 Jun 2026 00:00:00 +0000
+
