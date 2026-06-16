@@ -168,8 +168,8 @@ jobs:
       - name: Build RPM builder image
         uses: docker/build-push-action@v6
         with:
-          context: ${{ github.workspace }}/node_exporter-rpm
-          file: ${{ github.workspace }}/node_exporter-rpm/Dockerfile.builder
+          context: ${{ github.workspace }}
+          file: ${{ github.workspace }}/Dockerfile.rpm-builder
           platforms: ${{ matrix.platform }}
           load: true
           cache-from: type=gha
