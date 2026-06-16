@@ -357,7 +357,7 @@ function build_package()
     print_debug_line "${FUNCNAME[0]} : Building .deb package (arch: $target_arch)."
 
     cd "$build_root"
-    dpkg-buildpackage -b -us -uc -a"$target_arch"
+    dpkg-buildpackage -b -us -uc -d -a"$target_arch"
 
     if [ "$?" -ne 0 ]; then
         echo "ERROR: dpkg-buildpackage failed."

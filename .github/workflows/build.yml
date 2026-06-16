@@ -70,12 +70,17 @@ jobs:
         run: |
           adduser -D -G abuild builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          # container: mounts the workspace root-owned. Copy to a
+          # writable location so the builder user can create build/.
+          cp -r "$GITHUB_WORKSPACE" /tmp/workspace
+          chown -R builder:abuild /tmp/workspace
+          echo "WS=/tmp/workspace" >> "$GITHUB_ENV"
 
       - name: Build .apk (${{ matrix.arch }})
         run: |
-          ver=$(cat LATEST_VERSION | sed 's/^v//')
+          ver=$(cat "$WS"/LATEST_VERSION | sed 's/^v//')
           sudo -u builder HOME=/home/builder \
-            bash -c "cd node_exporter-apk && ./build.sh -v '$ver' -a '${{ matrix.arch }}'"
+            bash -c "cd '$WS'/node_exporter-apk && ./build.sh -v '$ver' -a '${{ matrix.arch }}'"
 
       - name: Collect artifacts
         run: |
