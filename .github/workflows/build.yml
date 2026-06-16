@@ -123,6 +123,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -148,6 +150,13 @@ jobs:
                 cd /tmp/ws/node_exporter-rpm &&
                 GITHUB_TOKEN=\"$GITHUB_TOKEN\" ./build.sh -v '\''$ver'\'' -a '\''${{ matrix.arch }}'\''
               "
+
+              # SHA256 checksums for reproducibility
+              echo ""
+              echo "=== SHA256 checksums ==="
+              sha256sum /tmp/ws/node_exporter-rpm/rpmbuild/SOURCES/*.tar.gz || true
+              echo "=== end SHA256 ==="
+              echo ""
 
               mkdir -p /workspace/rpmout
               find /tmp/ws/node_exporter-rpm -name "*.rpm" -type f \
