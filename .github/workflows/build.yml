@@ -26,6 +26,8 @@ jobs:
           sudo apt-get install -y -qq dpkg-dev fakeroot devscripts debhelper wget curl
 
       - name: Build .deb (${{ matrix.arch }})
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           ver=$(cat LATEST_VERSION | sed 's/^v//')
           cd node_exporter-deb
@@ -77,9 +79,11 @@ jobs:
           echo "WS=/tmp/workspace" >> "$GITHUB_ENV"
 
       - name: Build .apk (${{ matrix.arch }})
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           ver=$(cat "$WS"/LATEST_VERSION | sed 's/^v//')
-          sudo -u builder HOME=/home/builder \
+          sudo -u builder HOME=/home/builder GITHUB_TOKEN="$GITHUB_TOKEN" \
             bash -c "cd '$WS'/node_exporter-apk && ./build.sh -v '$ver' -a '${{ matrix.arch }}'"
 
       - name: Collect artifacts
