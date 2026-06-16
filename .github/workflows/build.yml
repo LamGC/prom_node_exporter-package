@@ -10,7 +10,9 @@ on:
 
 permissions:
   contents: write
-  id-token: write   # needed for cosign OIDC keyless signing
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   # ── Debian (.deb) packages ─────────────────────────────────────────────
@@ -49,20 +51,18 @@ jobs:
           fi
           echo "lintian passed (exit code $rc)"
 
-      - name: Sign packages (cosign OIDC)
-        uses: sigstore/cosign-installer@v3
-
-      - name: Sign and create checksums
+      - name: Create source checksums
         run: |
           cd node_exporter-deb
-          pkgcount=0
           for deb in prometheus-node-exporter_*.deb; do
-            cosign sign-blob --yes "$deb" --output-signature "${deb}.sig"
             cp build/source.sha256 "${deb}.source.sha256"
-            cosign sign-blob --yes "${deb}.source.sha256" --output-signature "${deb}.source.sha256.sig"
-            pkgcount=$((pkgcount + 1))
           done
-          echo "Signed $pkgcount .deb packages (+ source.sha256)"
+          echo "Created source SHA256 files for $(echo prometheus-node-exporter_*.deb | wc -w) packages"
+
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: node_exporter-deb/prometheus-node-exporter_*.deb
 
       - name: Upload .deb artifacts
         uses: actions/upload-artifact@v7
@@ -70,9 +70,7 @@ jobs:
           name: deb-${{ matrix.arch }}
           path: |
             node_exporter-deb/prometheus-node-exporter_*.deb
-            node_exporter-deb/prometheus-node-exporter_*.deb.sig
             node_exporter-deb/prometheus-node-exporter_*.deb.source.sha256
-            node_exporter-deb/prometheus-node-exporter_*.deb.source.sha256.sig
           if-no-files-found: error
           retention-days: 30
 
@@ -117,20 +115,18 @@ jobs:
           fi
           ls -la output/
 
-      - name: Sign packages (cosign OIDC)
-        uses: sigstore/cosign-installer@v3
-
-      - name: Sign and create checksums
+      - name: Create source checksums
         run: |
           cd output
-          pkgcount=0
           for apk in prometheus-node-exporter-[0-9]*.apk; do
-            cosign sign-blob --yes "$apk" --output-signature "${apk}.sig"
             cp source.sha256 "${apk}.source.sha256"
-            cosign sign-blob --yes "${apk}.source.sha256" --output-signature "${apk}.source.sha256.sig"
-            pkgcount=$((pkgcount + 1))
           done
-          echo "Signed $pkgcount .apk packages (+ source.sha256)"
+          echo "Created source SHA256 files"
+
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: output/prometheus-node-exporter-[0-9]*.apk
 
       - name: Upload .apk artifacts
         uses: actions/upload-artifact@v7
@@ -138,15 +134,11 @@ jobs:
           name: apk-${{ matrix.arch }}
           path: |
             output/prometheus-node-exporter-[0-9]*.apk
-            output/prometheus-node-exporter-[0-9]*.apk.sig
             output/prometheus-node-exporter-[0-9]*.apk.source.sha256
-            output/prometheus-node-exporter-[0-9]*.apk.source.sha256.sig
           if-no-files-found: error
           retention-days: 30
 
   # ── RPM (.rpm) packages ────────────────────────────────────────────────
-  # QEMU + per-arch containers so rpmbuild sees a "native" host.
-  # Builder image cached via docker/build-push-action type=gha for speed.
   build-rpm:
     runs-on: ubuntu-24.04
     strategy:
@@ -173,9 +165,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Build a cached builder image.  type=gha uses the GitHub Actions
-      # Cache service — base image layers + dnf install are cached across
-      # workflow runs, even for QEMU-emulated platforms.
       - name: Build RPM builder image
         uses: docker/build-push-action@v6
         with:
@@ -209,7 +198,6 @@ jobs:
                 GITHUB_TOKEN=\"$GITHUB_TOKEN\" ./build.sh -v '\''$ver'\'' -a '\''${{ matrix.arch }}'\''
               "
 
-              # SHA256 checksums for reproducibility
               echo ""
               echo "=== SHA256 checksums ==="
               sha256sum /tmp/ws/node_exporter-rpm/rpmbuild/SOURCES/*.tar.gz || true
@@ -224,20 +212,18 @@ jobs:
       - name: List RPM artifacts
         run: ls -la rpmout/
 
-      - name: Sign packages (cosign OIDC)
-        uses: sigstore/cosign-installer@v3
-
-      - name: Sign and create checksums
+      - name: Create source checksums
         run: |
           cd rpmout
-          pkgcount=0
           for rpm in *.rpm; do
-            cosign sign-blob --yes "$rpm" --output-signature "${rpm}.sig"
             cp source.sha256 "${rpm}.source.sha256"
-            cosign sign-blob --yes "${rpm}.source.sha256" --output-signature "${rpm}.source.sha256.sig"
-            pkgcount=$((pkgcount + 1))
           done
-          echo "Signed $pkgcount .rpm packages (+ source.sha256)"
+          echo "Created source SHA256 files"
+
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: rpmout/*.rpm
 
       - name: Upload .rpm artifacts
         uses: actions/upload-artifact@v7
@@ -245,9 +231,7 @@ jobs:
           name: rpm-${{ matrix.arch }}
           path: |
             rpmout/*.rpm
-            rpmout/*.rpm.sig
             rpmout/*.rpm.source.sha256
-            rpmout/*.rpm.source.sha256.sig
           if-no-files-found: error
           retention-days: 30
 
@@ -322,17 +306,11 @@ jobs:
           make_latest: true
           files: |
             artifacts/deb/*.deb
-            artifacts/deb/*.deb.sig
             artifacts/deb/*.deb.source.sha256
-            artifacts/deb/*.deb.source.sha256.sig
             artifacts/apk/*.apk
-            artifacts/apk/*.apk.sig
             artifacts/apk/*.apk.source.sha256
-            artifacts/apk/*.apk.source.sha256.sig
             artifacts/rpm/*.rpm
-            artifacts/rpm/*.rpm.sig
             artifacts/rpm/*.rpm.source.sha256
-            artifacts/rpm/*.rpm.source.sha256.sig
           body: |
             ## node_exporter ${{ steps.version.outputs.tag }}
 
@@ -341,21 +319,17 @@ jobs:
 
             Upstream release: https://github.com/prometheus/node_exporter/releases/tag/${{ steps.version.outputs.tag }}
 
-            ### 🔏 Signatures
+            ### 🔏 Build Provenance
 
-            All packages and their source tarball checksums are signed via
-            Sigstore OIDC keyless signing. GitHub provides SHA256 checksums
-            for all release assets automatically. Verify individual files with:
+            All packages have SLSA build provenance attestations generated
+            by GitHub Actions. Verify with:
 
             ```bash
-            cosign verify-blob --certificate-identity \
-              "https://github.com/LamGC/prom_node_exporter-package/.github/workflows/build.yml@refs/heads/main" \
-              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-              --signature <file>.sig <file>
+            gh attestation verify <package> --repo LamGC/prom_node_exporter-package
             ```
 
-            `.source.sha256` files contain the SHA256 of the upstream
-            node_exporter tarball used to build each package.
+            `.source.sha256` files contain the SHA256 checksums of the
+            upstream node_exporter tarballs used to build each package.
 
             ### Debian/Ubuntu (.deb)
 
@@ -408,8 +382,6 @@ jobs:
             sudo vi /etc/sysconfig/prometheus-node-exporter
             sudo systemctl start prometheus-node-exporter
             ```
-
-            > 🔒 **This is a draft release.** Review the artifacts, then click "Publish release" to make it public.
 
       - name: Done (release existed)
         if: steps.check.outputs.EXISTS == 'true'
