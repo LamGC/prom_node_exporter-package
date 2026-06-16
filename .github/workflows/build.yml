@@ -145,6 +145,8 @@ jobs:
           retention-days: 30
 
   # ── RPM (.rpm) packages ────────────────────────────────────────────────
+  # QEMU + per-arch containers so rpmbuild sees a "native" host.
+  # Builder image cached via docker/build-push-action type=gha for speed.
   build-rpm:
     runs-on: ubuntu-24.04
     strategy:
@@ -168,6 +170,23 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build a cached builder image.  type=gha uses the GitHub Actions
+      # Cache service — base image layers + dnf install are cached across
+      # workflow runs, even for QEMU-emulated platforms.
+      - name: Build RPM builder image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ github.workspace }}/node_exporter-rpm
+          file: ${{ github.workspace }}/node_exporter-rpm/Dockerfile.builder
+          platforms: ${{ matrix.platform }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: rpm-builder:latest
+
       - name: Build .rpm (${{ matrix.arch }})
         env:
           GH_TOKEN_INNER: ${{ github.token }}
@@ -177,10 +196,8 @@ jobs:
             -v "$GITHUB_WORKSPACE":/workspace:ro \
             -v "$GITHUB_WORKSPACE/rpmout":/output \
             -e GITHUB_TOKEN="$GH_TOKEN_INNER" \
-            fedora:41 bash -c '
+            rpm-builder:latest bash -c '
               set -e
-              dnf install -y --nodocs \
-                wget git rpm-build util-linux coreutils passwd 2>&1 | tail -2
               useradd builder
               echo builder:password | chpasswd
               cp -r /workspace /tmp/ws
