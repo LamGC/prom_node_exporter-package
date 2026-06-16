@@ -30,18 +30,42 @@ deps_bin_to_pkg=(
 )
 
 # Mapping from Alpine arch to upstream Go arch suffix.
-# Alpine uses different names for the same CPU architectures.
 declare -A ARCH_MAP
 ARCH_MAP=(
     ['x86_64']='amd64'
     ['aarch64']='arm64'
     ['armv7']='armv7'
-    ['armhf']='armv6'
     ['x86']='386'
     ['s390x']='s390x'
     ['ppc64le']='ppc64le'
     ['riscv64']='riscv64'
 )
+
+# CBUILD triplet — must use GCC/musl target triplet conventions, NOT
+# Alpine APKBUILD arch names.  abuild's hostspec_to_arch() matches the
+# CPU component with patterns like i[0-9]86, powerpc64le, armv7*-eabihf
+# and returns "unknown" for unrecognised triples (line 2769 of abuild).
+declare -A TRIPLET_MAP
+TRIPLET_MAP=(
+    ['x86_64']='x86_64-alpine-linux-musl'
+    ['aarch64']='aarch64-alpine-linux-musl'
+    ['armv7']='armv7-alpine-linux-musleabihf'
+    ['x86']='i586-alpine-linux-musl'
+    ['s390x']='s390x-alpine-linux-musl'
+    ['ppc64le']='powerpc64le-alpine-linux-musl'
+    ['riscv64']='riscv64-alpine-linux-musl'
+)
+
+function alpine_triplet()
+{
+    local t="${TRIPLET_MAP[$target_arch]}"
+    if [ -z "$t" ]; then
+        echo "ERROR: Unknown Alpine architecture: $target_arch" >&2
+        echo "Supported: ${!TRIPLET_MAP[*]}" >&2
+        exit 15
+    fi
+    echo "$t"
+}
 
 function go_arch()
 {
@@ -425,12 +449,13 @@ function build_package()
     export ABUILD_USERDIR="${HOME}/.abuild"
 
     # For cross-architecture builds (e.g., aarch64 on x86_64), abuild
-    # blocks unless CBUILD/CHOST/CTARGET match the target arch.  Since
-    # we are packaging a pre-built binary (no compilation), these values
-    # only affect metadata validation.
-    export CBUILD="$target_arch-alpine-linux-musl"
-    export CHOST="$target_arch-alpine-linux-musl"
-    export CTARGET="$target_arch-alpine-linux-musl"
+    # validates CBUILD/CHOST/CTARGET against its known-arch list.
+    # We use the same arch name as the APKBUILD arch= field.
+    local triplet
+    triplet=$(alpine_triplet) || exit 15
+    export CBUILD="$triplet"
+    export CHOST="$triplet"
+    export CTARGET="$triplet"
 
     # Run abuild to build the package.
     # -F : force — skip checksum re-verification.
