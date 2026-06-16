@@ -58,14 +58,11 @@ jobs:
           pkgcount=0
           for deb in prometheus-node-exporter_*.deb; do
             cosign sign-blob --yes "$deb" --output-signature "${deb}.sig"
+            cp build/source.sha256 "${deb}.source.sha256"
+            cosign sign-blob --yes "${deb}.source.sha256" --output-signature "${deb}.source.sha256.sig"
             pkgcount=$((pkgcount + 1))
           done
-          echo "Signed $pkgcount .deb packages"
-
-          # SHA256 checksums of output packages
-          sha256sum prometheus-node-exporter_*.deb > packages.sha256
-          cosign sign-blob --yes packages.sha256 --output-signature packages.sha256.sig
-          echo "Signed packages.sha256"
+          echo "Signed $pkgcount .deb packages (+ source.sha256)"
 
       - name: Upload .deb artifacts
         uses: actions/upload-artifact@v7
@@ -74,9 +71,8 @@ jobs:
           path: |
             node_exporter-deb/prometheus-node-exporter_*.deb
             node_exporter-deb/prometheus-node-exporter_*.deb.sig
-            node_exporter-deb/build/source.sha256
-            node_exporter-deb/packages.sha256
-            node_exporter-deb/packages.sha256.sig
+            node_exporter-deb/prometheus-node-exporter_*.deb.source.sha256
+            node_exporter-deb/prometheus-node-exporter_*.deb.source.sha256.sig
           if-no-files-found: error
           retention-days: 30
 
@@ -116,7 +112,6 @@ jobs:
           mkdir -p output
           find /home/builder/packages -name "prometheus-node-exporter-*.apk" -type f \
             -exec cp {} output/ \;
-          # Also copy source tarball SHA256 if present
           if [ -f "$WS"/node_exporter-apk/build/source.sha256 ]; then
             cp "$WS"/node_exporter-apk/build/source.sha256 output/
           fi
@@ -129,26 +124,23 @@ jobs:
         run: |
           cd output
           pkgcount=0
-          for apk in *.apk; do
+          for apk in prometheus-node-exporter-[0-9]*.apk; do
             cosign sign-blob --yes "$apk" --output-signature "${apk}.sig"
+            cp source.sha256 "${apk}.source.sha256"
+            cosign sign-blob --yes "${apk}.source.sha256" --output-signature "${apk}.source.sha256.sig"
             pkgcount=$((pkgcount + 1))
           done
-          echo "Signed $pkgcount .apk packages"
-
-          sha256sum *.apk > packages.sha256
-          cosign sign-blob --yes packages.sha256 --output-signature packages.sha256.sig
-          echo "Signed packages.sha256"
+          echo "Signed $pkgcount .apk packages (+ source.sha256)"
 
       - name: Upload .apk artifacts
         uses: actions/upload-artifact@v7
         with:
           name: apk-${{ matrix.arch }}
           path: |
-            output/*.apk
-            output/*.apk.sig
-            output/source.sha256
-            output/packages.sha256
-            output/packages.sha256.sig
+            output/prometheus-node-exporter-[0-9]*.apk
+            output/prometheus-node-exporter-[0-9]*.apk.sig
+            output/prometheus-node-exporter-[0-9]*.apk.source.sha256
+            output/prometheus-node-exporter-[0-9]*.apk.source.sha256.sig
           if-no-files-found: error
           retention-days: 30
 
@@ -224,13 +216,11 @@ jobs:
           pkgcount=0
           for rpm in *.rpm; do
             cosign sign-blob --yes "$rpm" --output-signature "${rpm}.sig"
+            cp source.sha256 "${rpm}.source.sha256"
+            cosign sign-blob --yes "${rpm}.source.sha256" --output-signature "${rpm}.source.sha256.sig"
             pkgcount=$((pkgcount + 1))
           done
-          echo "Signed $pkgcount .rpm packages"
-
-          sha256sum *.rpm > packages.sha256
-          cosign sign-blob --yes packages.sha256 --output-signature packages.sha256.sig
-          echo "Signed packages.sha256"
+          echo "Signed $pkgcount .rpm packages (+ source.sha256)"
 
       - name: Upload .rpm artifacts
         uses: actions/upload-artifact@v7
@@ -239,9 +229,8 @@ jobs:
           path: |
             rpmout/*.rpm
             rpmout/*.rpm.sig
-            rpmout/source.sha256
-            rpmout/packages.sha256
-            rpmout/packages.sha256.sig
+            rpmout/*.rpm.source.sha256
+            rpmout/*.rpm.source.sha256.sig
           if-no-files-found: error
           retention-days: 30
 
@@ -305,21 +294,6 @@ jobs:
           echo "=== APK ===" && ls -lh artifacts/apk/
           echo "=== RPM ===" && ls -lh artifacts/rpm/
 
-      - name: Create combined SHA256SUMS and sign
-        if: steps.check.outputs.EXISTS == 'false'
-        uses: sigstore/cosign-installer@v3
-      - run: |
-          ver=$(cat LATEST_VERSION | sed 's/^v//')
-          for dir in deb apk rpm; do
-            if [ -f "artifacts/$dir/packages.sha256" ]; then
-              echo "=== $dir packages ===" >> SHA256SUMS
-              sed "s|^|$dir/|" "artifacts/$dir/packages.sha256" >> SHA256SUMS
-            fi
-          done
-          echo "=== SHA256SUMS ===" && cat SHA256SUMS
-          cosign sign-blob --yes SHA256SUMS --output-signature SHA256SUMS.sig
-          echo "Signed SHA256SUMS → SHA256SUMS.sig"
-
       - name: Create Release Draft
         if: steps.check.outputs.EXISTS == 'false'
         uses: softprops/action-gh-release@v2
@@ -332,21 +306,16 @@ jobs:
           files: |
             artifacts/deb/*.deb
             artifacts/deb/*.deb.sig
-            artifacts/deb/build/source.sha256
-            artifacts/deb/packages.sha256
-            artifacts/deb/packages.sha256.sig
+            artifacts/deb/*.deb.source.sha256
+            artifacts/deb/*.deb.source.sha256.sig
             artifacts/apk/*.apk
             artifacts/apk/*.apk.sig
-            artifacts/apk/source.sha256
-            artifacts/apk/packages.sha256
-            artifacts/apk/packages.sha256.sig
+            artifacts/apk/*.apk.source.sha256
+            artifacts/apk/*.apk.source.sha256.sig
             artifacts/rpm/*.rpm
             artifacts/rpm/*.rpm.sig
-            artifacts/rpm/source.sha256
-            artifacts/rpm/packages.sha256
-            artifacts/rpm/packages.sha256.sig
-            SHA256SUMS
-            SHA256SUMS.sig
+            artifacts/rpm/*.rpm.source.sha256
+            artifacts/rpm/*.rpm.source.sha256.sig
           body: |
             ## node_exporter ${{ steps.version.outputs.tag }}
 
@@ -357,8 +326,9 @@ jobs:
 
             ### 🔏 Signatures
 
-            All packages and checksums are signed via Sigstore OIDC keyless
-            signing. Verify with:
+            All packages and their source tarball checksums are signed via
+            Sigstore OIDC keyless signing. GitHub provides SHA256 checksums
+            for all release assets automatically. Verify individual files with:
 
             ```bash
             cosign verify-blob --certificate-identity \
@@ -367,9 +337,8 @@ jobs:
               --signature <file>.sig <file>
             ```
 
-            ### Combined SHA256SUMS
-
-            See `SHA256SUMS` and `SHA256SUMS.sig` attached below.
+            `.source.sha256` files contain the SHA256 of the upstream
+            node_exporter tarball used to build each package.
 
             ### Debian/Ubuntu (.deb)
 
