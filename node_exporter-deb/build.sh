@@ -16,8 +16,6 @@ current_dir=$(dirname "$(readlink -f "$0")")
 build_root=$(realpath "$current_dir/build")
 download_url_root="https://github.com/$project/$product/releases/download/"
 release_link="https://api.github.com/repos/$project/$product/releases"
-maybe_login_to_github=${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"}
-maybe_login_to_github_wget=${GITHUB_TOKEN:+--header="Authorization: Bearer $GITHUB_TOKEN"}
 execute_features=()
 declare -A available_versions
 
@@ -239,7 +237,9 @@ function get_available_versions()
     _go_arch=$(go_arch) || exit 11
 
     print_debug_line "Getting available versions from $release_link (arch: $_go_arch)"
-    links=$(curl --silent ${maybe_login_to_github:+"$maybe_login_to_github"} "$release_link" | grep -oP "https.+$product-\d+\.\d+\.\d+\.linux-${_go_arch}.tar.gz")
+    local curl_auth=()
+    [ -n "$GITHUB_TOKEN" ] && curl_auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
+    links=$(curl --silent "${curl_auth[@]}" "$release_link" | grep -oP "https.+$product-\d+\.\d+\.\d+\.linux-${_go_arch}.tar.gz")
     if [ "$?" -ne 0 ]; then
         echo "Could not fetch releases from $release_link."
         echo "Please verify you are connected to the interwebz."
@@ -308,7 +308,9 @@ function download_and_extract()
         print_debug_line "$build_root/$core_archive_name already exists. Not downloading again..."
     else
         print_debug_line "${FUNCNAME[0]} : Downloading ${available_versions[$pkg_version]} to $build_root/$core_archive_name"
-        wget ${maybe_login_to_github_wget} -O "$build_root/$core_archive_name" "${available_versions[$pkg_version]}"
+        local wget_auth=()
+        [ -n "$GITHUB_TOKEN" ] && wget_auth=(--header="Authorization: Bearer $GITHUB_TOKEN")
+        wget "${wget_auth[@]}" -O "$build_root/$core_archive_name" "${available_versions[$pkg_version]}"
         wget_exit=$?
 
         if [ ! -s "$build_root/$core_archive_name" ] || [ "$wget_exit" -ne 0 ]; then
