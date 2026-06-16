@@ -102,8 +102,10 @@ jobs:
           retention-days: 30
 
   # ── RPM (.rpm) packages ────────────────────────────────────────────────
-  # RPM builds use QEMU + Docker per-arch containers so rpmbuild sees a
-  # "native" host running whatever target arch we need.
+  # QEMU + per-arch containers so rpmbuild sees a "native" host.
+  # Fedora publishes images for: amd64, arm64/v8, ppc64le, s390x.
+  # arm/v7 and riscv64 are not available — those architectures are
+  # covered by the DEB and APK jobs.
   build-rpm:
     runs-on: ubuntu-24.04
     strategy:
@@ -114,14 +116,10 @@ jobs:
             platform: linux/amd64
           - arch: aarch64
             platform: linux/arm64/v8
-          - arch: armv7l
-            platform: linux/arm/v7
           - arch: ppc64le
             platform: linux/ppc64le
           - arch: s390x
             platform: linux/s390x
-          - arch: riscv64
-            platform: linux/riscv64
 
     steps:
       - uses: actions/checkout@v4
@@ -130,9 +128,12 @@ jobs:
         uses: docker/setup-qemu-action@v3
 
       - name: Build .rpm (${{ matrix.arch }})
+        env:
+          GH_TOKEN_INNER: ${{ github.token }}
         run: |
           docker run --rm --platform ${{ matrix.platform }} \
             -v "$GITHUB_WORKSPACE":/workspace:ro \
+            -e GITHUB_TOKEN="$GH_TOKEN_INNER" \
             fedora:41 bash -c '
               set -e
               dnf install -y --nodocs \
@@ -145,7 +146,7 @@ jobs:
               ver=$(cat /tmp/ws/LATEST_VERSION | sed "s/^v//")
               runuser -u builder -- bash -c "
                 cd /tmp/ws/node_exporter-rpm &&
-                ./build.sh -v '\''$ver'\'' -a '\''${{ matrix.arch }}'\''
+                GITHUB_TOKEN=\"$GITHUB_TOKEN\" ./build.sh -v '\''$ver'\'' -a '\''${{ matrix.arch }}'\''
               "
 
               mkdir -p /workspace/rpmout
@@ -293,11 +294,8 @@ jobs:
             |-------------|---------|
             | x86_64 | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-1.x86_64.rpm` |
             | aarch64 | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-1.aarch64.rpm` |
-            | armv7l | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-1.armv7l.rpm` |
-            | i686 | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-1.i686.rpm` |
             | ppc64le | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-1.ppc64le.rpm` |
             | s390x | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-1.s390x.rpm` |
-            | riscv64 | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-1.riscv64.rpm` |
 
             ```bash
             sudo rpm -i prometheus-node-exporter-*.rpm
