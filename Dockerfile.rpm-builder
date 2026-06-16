@@ -1,0 +1,7 @@
+# Builder image for prometheus-node-exporter RPM packaging.
+# Extends fedora:41 with pre-installed rpm-build toolchain.
+# Cached via docker/build-push-action type=gha across CI runs.
+FROM fedora:41
+RUN dnf install -y --nodocs \
+    wget git rpm-build util-linux coreutils passwd \
+    && dnf clean all
