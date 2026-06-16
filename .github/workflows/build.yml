@@ -133,8 +133,10 @@ jobs:
         env:
           GH_TOKEN_INNER: ${{ github.token }}
         run: |
+          mkdir -p rpmout
           docker run --rm --platform ${{ matrix.platform }} \
             -v "$GITHUB_WORKSPACE":/workspace:ro \
+            -v "$GITHUB_WORKSPACE/rpmout":/output \
             -e GITHUB_TOKEN="$GH_TOKEN_INNER" \
             fedora:41 bash -c '
               set -e
@@ -158,9 +160,8 @@ jobs:
               echo "=== end SHA256 ==="
               echo ""
 
-              mkdir -p /workspace/rpmout
               find /tmp/ws/node_exporter-rpm -name "*.rpm" -type f \
-                -exec cp {} /workspace/rpmout/ \;
+                -exec cp {} /output/ \;
             '
 
       - name: List RPM artifacts
