@@ -97,9 +97,72 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # ── RPM (.rpm) packages ────────────────────────────────────────────────
+  # RPM builds use QEMU + Docker per-arch containers so rpmbuild sees a
+  # "native" host running whatever target arch we need.
+  build-rpm:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            platform: linux/amd64
+          - arch: aarch64
+            platform: linux/arm64/v8
+          - arch: armv7l
+            platform: linux/arm/v7
+          - arch: ppc64le
+            platform: linux/ppc64le
+          - arch: s390x
+            platform: linux/s390x
+          - arch: riscv64
+            platform: linux/riscv64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build .rpm (${{ matrix.arch }})
+        run: |
+          docker run --rm --platform ${{ matrix.platform }} \
+            -v "$GITHUB_WORKSPACE":/workspace:ro \
+            fedora:41 bash -c '
+              set -e
+              dnf install -y --nodocs \
+                wget git rpm-build util-linux coreutils passwd 2>&1 | tail -2
+              useradd builder
+              echo builder:password | chpasswd
+              cp -r /workspace /tmp/ws
+              chown -R builder:builder /tmp/ws
+
+              ver=$(cat /tmp/ws/LATEST_VERSION | sed "s/^v//")
+              runuser -u builder -- bash -c "
+                cd /tmp/ws/node_exporter-rpm &&
+                ./build.sh -v '\''$ver'\'' -a '\''${{ matrix.arch }}'\''
+              "
+
+              mkdir -p /workspace/rpmout
+              find /tmp/ws/node_exporter-rpm -name "*.rpm" -type f \
+                -exec cp {} /workspace/rpmout/ \;
+            '
+
+      - name: List RPM artifacts
+        run: ls -la rpmout/
+
+      - name: Upload .rpm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.arch }}
+          path: rpmout/*.rpm
+          if-no-files-found: error
+          retention-days: 30
+
   # ── Release draft ──────────────────────────────────────────────────────
   release:
-    needs: [build-deb, build-apk]
+    needs: [build-deb, build-apk, build-rpm]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -144,6 +207,14 @@ jobs:
           merge-multiple: true
           path: artifacts/apk/
 
+      - name: Download all .rpm artifacts
+        if: steps.check.outputs.EXISTS == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: rpm-*
+          merge-multiple: true
+          path: artifacts/rpm/
+
       - name: List artifacts
         if: steps.check.outputs.EXISTS == 'false'
         run: |
@@ -151,6 +222,8 @@ jobs:
           ls -lh artifacts/deb/ 2>/dev/null || echo "(none)"
           echo "=== APK packages ==="
           ls -lh artifacts/apk/ 2>/dev/null || echo "(none)"
+          echo "=== RPM packages ==="
+          ls -lh artifacts/rpm/ 2>/dev/null || echo "(none)"
 
       - name: Create Release Draft
         if: steps.check.outputs.EXISTS == 'false'
@@ -158,16 +231,18 @@ jobs:
         with:
           token: ${{ github.token }}
           tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.tag }} — Debian + Alpine packages
+          name: ${{ steps.version.outputs.tag }} — Debian + Alpine + RPM packages
           draft: true
           make_latest: true
           files: |
             artifacts/deb/*.deb
             artifacts/apk/*.apk
+            artifacts/rpm/*.rpm
           body: |
             ## node_exporter ${{ steps.version.outputs.tag }}
 
-            Pre-built packages for Debian/Ubuntu (`.deb`) and Alpine Linux (`.apk`).
+            Pre-built packages for Debian/Ubuntu (`.deb`), Alpine Linux
+            (`.apk`), and RHEL derivatives (`.rpm`).
 
             Upstream release: https://github.com/prometheus/node_exporter/releases/tag/${{ steps.version.outputs.tag }}
 
@@ -206,6 +281,24 @@ jobs:
             sudo apk add --allow-untrusted prometheus-node-exporter-*.apk prometheus-node-exporter-openrc-*.apk
             sudo vi /etc/conf.d/node-exporter
             sudo rc-service node-exporter start
+            ```
+
+            ### RHEL / Fedora / CentOS (.rpm)
+
+            | Architecture | Package |
+            |-------------|---------|
+            | x86_64 | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-1.x86_64.rpm` |
+            | aarch64 | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-1.aarch64.rpm` |
+            | armv7l | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-1.armv7l.rpm` |
+            | i686 | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-1.i686.rpm` |
+            | ppc64le | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-1.ppc64le.rpm` |
+            | s390x | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-1.s390x.rpm` |
+            | riscv64 | `prometheus-node-exporter-${{ steps.version.outputs.plain }}-1.riscv64.rpm` |
+
+            ```bash
+            sudo rpm -i prometheus-node-exporter-*.rpm
+            sudo vi /etc/sysconfig/prometheus-node-exporter
+            sudo systemctl start prometheus-node-exporter
             ```
 
             > 🔒 **This is a draft release.** Review the artifacts, then click "Publish release" to make it public.
