@@ -398,6 +398,7 @@ function download_and_extract()
     print_debug_line "${FUNCNAME[0]} : Binary extracted to $build_root/node_exporter"
 
     echo "SHA256 ($core_archive_name) = $(sha256sum "$build_root/$core_archive_name" | cut -d' ' -f1)"
+    sha256sum "$build_root/$core_archive_name" > "$build_root/source.sha256"
 }
 
 function compute_checksums()
